@@ -8,14 +8,31 @@ public final class LoggerMiddleware<AppAction, AppState: Equatable>: Middleware 
     public typealias StateType = AppState
 
     private var getState: GetState<StateType>?
-    private let printer: (StaticString, CVarArg...) -> Void
+    private let actionTransform: (AppAction, ActionSource) -> String
+    private let actionPrinter: (String) -> Void
+    private let stateDiffTransform: (AppState, AppState) -> String?
+    private let stateDiffPrinter: (String?) -> Void
 
-    public init(printer: ((StaticString, CVarArg...) -> Void)? = nil) {
-        self.printer = printer ?? { (message: StaticString, args: CVarArg...) -> Void in os_log(.debug, log: .default, message, args) }
-    }
-
-    public init(printer: @escaping (String) -> Void) {
-        self.printer = { (message: StaticString, args: CVarArg...) -> Void in printer(String(format: "\(message)", args)) }
+    public init(
+        actionTransform: @escaping (AppAction, ActionSource) -> String = { "🕹 \(LoggerMiddleware.dumpToString($0)) from \($1)"},
+        actionPrinter: @escaping (String) -> Void = { os_log(.debug, log: .default, "%{PUBLIC}@", $0) },
+        stateDiffTransform: @escaping (AppState, AppState) -> String? = {
+            let stateBefore = LoggerMiddleware.dumpToString($0)
+            let stateAfter =  LoggerMiddleware.dumpToString($1)
+            return LoggerMiddleware.diff(old: stateBefore, new: stateAfter, linesOfContext: 2, prefixLines: "🏛 ")
+        },
+        stateDiffPrinter: @escaping (String?) -> Void = { state in
+            if let state = state {
+                os_log(.debug, log: .default, "%{PUBLIC}@", state)
+            } else {
+                os_log(.debug, log: .default, "%{PUBLIC}@", "🏛 No state mutation")
+            }
+        }
+    ) {
+        self.actionTransform = actionTransform
+        self.actionPrinter = actionPrinter
+        self.stateDiffTransform = stateDiffTransform
+        self.stateDiffPrinter = stateDiffPrinter
     }
 
     public func receiveContext(getState: @escaping GetState<StateType>, output: AnyActionHandler<OutputActionType>) {
@@ -25,27 +42,67 @@ public final class LoggerMiddleware<AppAction, AppState: Equatable>: Middleware 
     public func handle(action: InputActionType, from dispatcher: ActionSource, afterReducer: inout AfterReducer) {
         guard let getState = self.getState else { return }
 
-        var stateBefore = ""
-        dump(getState(), to: &stateBefore, name: nil, indent: 2)
+        let stateBefore = getState()
+        let actionMessage = actionTransform(action, dispatcher)
+
         afterReducer = .do {
-            var stateAfter = ""
-            dump(getState(), to: &stateAfter, name: nil, indent: 2)
+            let stateAfter = getState()
 
-            let message = "🕹 \(action) from \(dispatcher)"
-            self.printer("%{PUBLIC}@", message)
+            self.actionPrinter(actionMessage)
+            self.stateDiffPrinter(self.stateDiffTransform(stateBefore, stateAfter))
+        }
+    }
 
-            if let stateString = diff(old: stateBefore, new: stateAfter) {
-                self.printer("\n%{PUBLIC}@", stateString)
-            } else {
-                self.printer("🏛 No state mutation")
+    public static func dumpToString<T>(_ something: T, indent: Int = 2) -> String {
+        var output = ""
+        dump(something, to: &output, name: nil, indent: indent)
+        return output
+    }
+
+    public static func diff(old: String, new: String, linesOfContext: Int, prefixLines: String = "") -> String? {
+        guard old != new else { return nil }
+        let oldSplit = old.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let newSplit = new.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+
+        return chunk(
+            diff: diff(oldSplit, newSplit),
+            context: linesOfContext
+        ).lazy.flatMap { [$0.patchMark] + $0.lines }.map { "\(prefixLines)\($0)" }.joined(separator: "\n")
+    }
+
+    public static func diff(_ fst: [String], _ snd: [String]) -> [Difference<String>] {
+        var idxsOf = [String: [Int]]()
+        fst.enumerated().forEach { idxsOf[$1, default: []].append($0) }
+
+        let sub = snd.enumerated().reduce((overlap: [Int: Int](), fst: 0, snd: 0, len: 0)) { sub, sndPair in
+            (idxsOf[sndPair.element] ?? [])
+                .reduce((overlap: [Int: Int](), fst: sub.fst, snd: sub.snd, len: sub.len)) { innerSub, fstIdx in
+
+                    var newOverlap = innerSub.overlap
+                    newOverlap[fstIdx] = (sub.overlap[fstIdx - 1] ?? 0) + 1
+
+                    if let newLen = newOverlap[fstIdx], newLen > sub.len {
+                        return (newOverlap, fstIdx - newLen + 1, sndPair.offset - newLen + 1, newLen)
+                    }
+                    return (newOverlap, innerSub.fst, innerSub.snd, innerSub.len)
             }
+        }
+        let (_, fstIdx, sndIdx, len) = sub
 
-            self.printer("")
+        if len == 0 {
+            let fstDiff = fst.isEmpty ? [] : [Difference(elements: fst, which: .first)]
+            let sndDiff = snd.isEmpty ? [] : [Difference(elements: snd, which: .second)]
+            return fstDiff + sndDiff
+        } else {
+            let fstDiff = diff(Array(fst.prefix(upTo: fstIdx)), Array(snd.prefix(upTo: sndIdx)))
+            let midDiff = [Difference(elements: Array(fst.suffix(from: fstIdx).prefix(len)), which: .both)]
+            let lstDiff = diff(Array(fst.suffix(from: fstIdx + len)), Array(snd.suffix(from: sndIdx + len)))
+            return fstDiff + midDiff + lstDiff
         }
     }
 }
 
-struct Difference<A> {
+public struct Difference<A> {
     enum Which {
         case first
         case second
@@ -54,48 +111,6 @@ struct Difference<A> {
 
     let elements: [A]
     let which: Which
-}
-
-func diff(old: String, new: String) -> String? {
-    guard old != new else { return nil }
-    let oldSplit = old.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    let newSplit = new.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-
-    return chunk(
-        diff: diff(oldSplit, newSplit),
-        context: 2 // Lines before and after the changes to be shown as context
-    ).lazy.flatMap { [$0.patchMark] + $0.lines }.map { "🏛 \($0)" }.joined(separator: "\n")
-}
-
-func diff(_ fst: [String], _ snd: [String]) -> [Difference<String>] {
-    var idxsOf = [String: [Int]]()
-    fst.enumerated().forEach { idxsOf[$1, default: []].append($0) }
-
-    let sub = snd.enumerated().reduce((overlap: [Int: Int](), fst: 0, snd: 0, len: 0)) { sub, sndPair in
-        (idxsOf[sndPair.element] ?? [])
-            .reduce((overlap: [Int: Int](), fst: sub.fst, snd: sub.snd, len: sub.len)) { innerSub, fstIdx in
-
-                var newOverlap = innerSub.overlap
-                newOverlap[fstIdx] = (sub.overlap[fstIdx - 1] ?? 0) + 1
-
-                if let newLen = newOverlap[fstIdx], newLen > sub.len {
-                    return (newOverlap, fstIdx - newLen + 1, sndPair.offset - newLen + 1, newLen)
-                }
-                return (newOverlap, innerSub.fst, innerSub.snd, innerSub.len)
-        }
-    }
-    let (_, fstIdx, sndIdx, len) = sub
-
-    if len == 0 {
-        let fstDiff = fst.isEmpty ? [] : [Difference(elements: fst, which: .first)]
-        let sndDiff = snd.isEmpty ? [] : [Difference(elements: snd, which: .second)]
-        return fstDiff + sndDiff
-    } else {
-        let fstDiff = diff(Array(fst.prefix(upTo: fstIdx)), Array(snd.prefix(upTo: sndIdx)))
-        let midDiff = [Difference(elements: Array(fst.suffix(from: fstIdx).prefix(len)), which: .both)]
-        let lstDiff = diff(Array(fst.suffix(from: fstIdx + len)), Array(snd.suffix(from: sndIdx + len)))
-        return fstDiff + midDiff + lstDiff
-    }
 }
 
 let minus = "−"
