@@ -12,10 +12,15 @@ let package = Package(
         .library(name: "LoggerMiddleware", targets: ["LoggerMiddleware"])
     ],
     dependencies: [
-        .package(url: "https://github.com/SwiftRex/SwiftRex.git", from: "0.7.0")
+        .package(url: "https://github.com/SwiftRex/SwiftRex.git", .upToNextMajor(from: "0.7.0"))
     ],
     targets: [
-        .target(name: "LoggerMiddleware", dependencies: ["CombineRex"]),
+        .target(
+            name: "LoggerMiddleware",
+            dependencies: [
+                .product(name: "CombineRex", package: "SwiftRex")
+            ]
+        ),
         .testTarget(name: "LoggerMiddlewareTests", dependencies: ["LoggerMiddleware"])
     ]
 )
