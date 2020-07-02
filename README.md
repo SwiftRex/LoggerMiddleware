@@ -4,7 +4,7 @@
 
 ### Simple usage, logging all actions and state changes for whole app
 ```swift
-LoggerMiddleware() <> MyOtherMiddleware().lift(...)
+LoggerMiddleware.default() <> MyOtherMiddleware().lift(...)
 ```
 
 ### Log a single middleware, only actions and state within that middleware field
@@ -13,7 +13,7 @@ MyOtherMiddleware().logger().lift(...)
 ```
 
 ### Log a single middleware, but including actions and state changes for the whole app
-(same as adding LoggerMiddleware in the chain as seen in the first option)
+(same as adding LoggerMiddleware.default() in the chain as seen in the first option)
 ```swift
 MyOtherMiddleware().lift(...).logger()
 ```

@@ -21,7 +21,7 @@ extension Middleware where StateType: Equatable {
             }
         },
         queue: DispatchQueue = .main
-    ) -> LoggerMiddleware<Self, InputActionType, OutputActionType, StateType> {
+    ) -> LoggerMiddleware<Self> {
         LoggerMiddleware(
             self,
             actionTransform: actionTransform,
@@ -33,8 +33,10 @@ extension Middleware where StateType: Equatable {
     }
 }
 
-public final class LoggerMiddleware<M: Middleware, InputActionType, OutputActionType, StateType: Equatable>
-where M.StateType == StateType, M.InputActionType == InputActionType, M.OutputActionType == OutputActionType {
+public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType: Equatable {
+    public typealias InputActionType = M.InputActionType
+    public typealias OutputActionType = M.OutputActionType
+    public typealias StateType = M.StateType
     private let middleware: M
     private let queue: DispatchQueue
     private var getState: GetState<StateType>?
@@ -83,8 +85,8 @@ where M.StateType == StateType, M.InputActionType == InputActionType, M.OutputAc
     }
 }
 
-extension LoggerMiddleware where M == IdentityMiddleware<InputActionType, OutputActionType, StateType> {
-    public convenience init(
+extension LoggerMiddleware {
+    public static func `default`(
         actionTransform: @escaping (InputActionType, ActionSource) -> String = {
             "\n🕹 \($0)\n🎪 \($1.file.split(separator: "/").last ?? ""):\($1.line) \($1.function)"
         },
@@ -102,12 +104,14 @@ extension LoggerMiddleware where M == IdentityMiddleware<InputActionType, Output
             }
         },
         queue: DispatchQueue = .main
-    ) {
-        self.init(IdentityMiddleware(),
-                  actionTransform: actionTransform,
-                  actionPrinter: actionPrinter,
-                  stateDiffTransform: stateDiffTransform,
-                  stateDiffPrinter: stateDiffPrinter,
-                  queue: queue)
+    ) -> LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>> {
+        .init(
+            IdentityMiddleware(),
+            actionTransform: actionTransform,
+            actionPrinter: actionPrinter,
+            stateDiffTransform: stateDiffTransform,
+            stateDiffPrinter: stateDiffPrinter,
+            queue: queue
+        )
     }
 }
