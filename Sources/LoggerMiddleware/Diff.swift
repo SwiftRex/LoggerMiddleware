@@ -7,14 +7,14 @@ public func dumpToString<T>(_ something: T, indent: Int = 2) -> String {
 }
 
 public struct Difference<A> {
-    enum Which {
+    public enum Which {
         case first
         case second
         case both
     }
 
-    let elements: [A]
-    let which: Which
+    public let elements: [A]
+    public let which: Which
 }
 
 extension Difference where A == String {

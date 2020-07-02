@@ -34,7 +34,7 @@ extension Middleware where StateType: Equatable {
 }
 
 public final class LoggerMiddleware<M: Middleware, InputActionType, OutputActionType, StateType: Equatable>
-where M.StateType == StateType, M.InputActionType ==InputActionType, M.OutputActionType == OutputActionType {
+where M.StateType == StateType, M.InputActionType == InputActionType, M.OutputActionType == OutputActionType {
     private let middleware: M
     private let queue: DispatchQueue
     private var getState: GetState<StateType>?
