@@ -4,7 +4,7 @@ import SwiftRex
 
 extension Middleware where StateType: Equatable {
     public func logger(
-        actionTransform: LoggerMiddleware<Self>.ActionTransform = .default,
+        actionTransform: LoggerMiddleware<Self>.ActionTransform = .default(),
         actionPrinter: LoggerMiddleware<Self>.ActionLogger = .osLog,
         stateDiffTransform: LoggerMiddleware<Self>.StateDiffTransform = .diff(),
         stateDiffPrinter: LoggerMiddleware<Self>.StateLogger = .osLog,
@@ -75,7 +75,7 @@ public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType
 
 extension LoggerMiddleware {
     public static func `default`(
-        actionTransform: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.ActionTransform = .default,
+        actionTransform: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.ActionTransform = .default(),
         actionPrinter: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.ActionLogger = .osLog,
         stateDiffTransform: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.StateDiffTransform = .diff(),
         stateDiffPrinter: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.StateLogger = .osLog,
@@ -98,9 +98,9 @@ extension LoggerMiddleware {
     public enum StateLogger {
         case osLog
         case file(URL)
-        case custom((String?) -> Void)
+        case custom((String) -> Void)
 
-        func log(state: String?) {
+        func log(state: String) {
             switch self {
             case .osLog: LoggerMiddleware.osLog(state: state)
             case let .file(url): LoggerMiddleware.fileLog(state: state, to: url)
@@ -109,20 +109,12 @@ extension LoggerMiddleware {
         }
     }
 
-    private static func osLog(state: String?) {
-        if let possibleStateChanges = state {
-            os_log(.debug, log: .default, "%{PUBLIC}@", possibleStateChanges)
-        } else {
-            os_log(.debug, log: .default, "%{PUBLIC}@", "🏛 No state mutation")
-        }
+    private static func osLog(state: String) {
+        os_log(.debug, log: .default, "%{PUBLIC}@", state)
     }
 
-    private static func fileLog(state: String?, to fileURL: URL) {
-        if let possibleStateChanges = state {
-            try? possibleStateChanges.write(toFile: fileURL.absoluteString, atomically: false, encoding: .utf8)
-        } else {
-            try? "🏛 No state mutation".write(toFile: fileURL.absoluteString, atomically: false, encoding: .utf8)
-        }
+    private static func fileLog(state: String, to fileURL: URL) {
+        try? state.write(toFile: fileURL.absoluteString, atomically: false, encoding: .utf8)
     }
 }
 
@@ -131,14 +123,15 @@ extension LoggerMiddleware {
     public enum StateDiffTransform {
         case diff(linesOfContext: Int = 2, prefixLines: String = "🏛 ")
         case newStateOnly
-        case custom((StateType?, StateType) -> String?)
+        case custom((StateType?, StateType) -> String)
 
-        func transform(oldState: StateType?, newState: StateType) -> String? {
+        func transform(oldState: StateType?, newState: StateType) -> String {
             switch self {
             case let .diff(linesOfContext, prefixLines):
                 let stateBefore = dumpToString(oldState)
                 let stateAfter =  dumpToString(newState)
                 return Difference.diff(old: stateBefore, new: stateAfter, linesOfContext: linesOfContext, prefixLines: prefixLines)
+                ?? "\(prefixLines) No state mutation"
             case .newStateOnly:
                 return dumpToString(newState)
             case let .custom(closure):
@@ -177,15 +170,18 @@ extension LoggerMiddleware {
 // MARK: Action Transform
 extension LoggerMiddleware {
     public enum ActionTransform {
-        case `default`
+        case `default`(actionPrefix: String = "\n🕹 ", sourcePrefix: String = "\n🎪 ")
         case actionNameOnly
         case custom((InputActionType, ActionSource) -> String)
 
         func transform(action: InputActionType, source: ActionSource) -> String {
             switch self {
-            case .default: return "\n🕹 \(action)\n🎪 \(source.file.split(separator: "/").last ?? ""):\(source.line) \(source.function)"
-            case .actionNameOnly: return "\(action)"
-            case let .custom(closure): return closure(action, source)
+            case let .default(actionPrefix, sourcePrefix):
+                return "\(actionPrefix)\(action)\(sourcePrefix)\(source.file.split(separator: "/").last ?? ""):\(source.line) \(source.function)"
+            case .actionNameOnly:
+                return "\(action)"
+            case let .custom(closure):
+                return closure(action, source)
             }
         }
     }
