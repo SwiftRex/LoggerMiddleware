@@ -4,22 +4,10 @@ import SwiftRex
 
 extension Middleware where StateType: Equatable {
     public func logger(
-        actionTransform: @escaping (InputActionType, ActionSource) -> String = {
-            "\n🕹 \($0)\n🎪 \($1.file.split(separator: "/").last ?? ""):\($1.line) \($1.function)"
-        },
-        actionPrinter: @escaping (String) -> Void = { os_log(.debug, log: .default, "%{PUBLIC}@", $0) },
-        stateDiffTransform: @escaping (StateType?, StateType) -> String? = {
-            let stateBefore = dumpToString($0)
-            let stateAfter =  dumpToString($1)
-            return Difference.diff(old: stateBefore, new: stateAfter, linesOfContext: 2, prefixLines: "🏛 ")
-        },
-        stateDiffPrinter: @escaping (String?) -> Void = { state in
-            if let state = state {
-                os_log(.debug, log: .default, "%{PUBLIC}@", state)
-            } else {
-                os_log(.debug, log: .default, "%{PUBLIC}@", "🏛 No state mutation")
-            }
-        },
+        actionTransform: LoggerMiddleware<Self>.ActionTransform = .default,
+        actionPrinter: LoggerMiddleware<Self>.ActionLogger = .osLog,
+        stateDiffTransform: LoggerMiddleware<Self>.StateDiffTransform = .diff(),
+        stateDiffPrinter: LoggerMiddleware<Self>.StateLogger = .osLog,
         queue: DispatchQueue = .main
     ) -> LoggerMiddleware<Self> {
         LoggerMiddleware(
@@ -40,17 +28,17 @@ public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType
     private let middleware: M
     private let queue: DispatchQueue
     private var getState: GetState<StateType>?
-    private let actionTransform: (InputActionType, ActionSource) -> String
-    private let actionPrinter: (String) -> Void
-    private let stateDiffTransform: (StateType?, StateType) -> String?
-    private let stateDiffPrinter: (String?) -> Void
+    private let actionTransform: ActionTransform
+    private let actionPrinter: ActionLogger
+    private let stateDiffTransform: StateDiffTransform
+    private let stateDiffPrinter: StateLogger
 
     init(
         _ middleware: M,
-        actionTransform: @escaping (InputActionType, ActionSource) -> String,
-        actionPrinter: @escaping (String) -> Void,
-        stateDiffTransform: @escaping (StateType?, StateType) -> String?,
-        stateDiffPrinter: @escaping (String?) -> Void,
+        actionTransform: ActionTransform,
+        actionPrinter: ActionLogger,
+        stateDiffTransform: StateDiffTransform,
+        stateDiffPrinter: StateLogger,
         queue: DispatchQueue
     ) {
         self.middleware = middleware
@@ -77,9 +65,9 @@ public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType
                   let stateAfter = self.getState?() else { return }
 
             self.queue.async {
-                let actionMessage = self.actionTransform(action, dispatcher)
-                self.actionPrinter(actionMessage)
-                self.stateDiffPrinter(self.stateDiffTransform(stateBefore, stateAfter))
+                let actionMessage = self.actionTransform.transform(action: action, source: dispatcher)
+                self.actionPrinter.log(action: actionMessage)
+                self.stateDiffPrinter.log(state: self.stateDiffTransform.transform(oldState: stateBefore, newState: stateAfter))
             }
         }
     }
@@ -87,22 +75,10 @@ public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType
 
 extension LoggerMiddleware {
     public static func `default`(
-        actionTransform: @escaping (InputActionType, ActionSource) -> String = {
-            "\n🕹 \($0)\n🎪 \($1.file.split(separator: "/").last ?? ""):\($1.line) \($1.function)"
-        },
-        actionPrinter: @escaping (String) -> Void = { os_log(.debug, log: .default, "%{PUBLIC}@", $0) },
-        stateDiffTransform: @escaping (StateType?, StateType) -> String? = {
-            let stateBefore = dumpToString($0)
-            let stateAfter =  dumpToString($1)
-            return Difference.diff(old: stateBefore, new: stateAfter, linesOfContext: 2, prefixLines: "🏛 ")
-        },
-        stateDiffPrinter: @escaping (String?) -> Void = { state in
-            if let state = state {
-                os_log(.debug, log: .default, "%{PUBLIC}@", state)
-            } else {
-                os_log(.debug, log: .default, "%{PUBLIC}@", "🏛 No state mutation")
-            }
-        },
+        actionTransform: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.ActionTransform = .default,
+        actionPrinter: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.ActionLogger = .osLog,
+        stateDiffTransform: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.StateDiffTransform = .diff(),
+        stateDiffPrinter: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.StateLogger = .osLog,
         queue: DispatchQueue = .main
     ) -> LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>> {
         .init(
@@ -113,5 +89,104 @@ extension LoggerMiddleware {
             stateDiffPrinter: stateDiffPrinter,
             queue: queue
         )
+    }
+}
+
+// MARK: - State
+// MARK: State Logger
+extension LoggerMiddleware {
+    public enum StateLogger {
+        case osLog
+        case file(URL)
+        case custom((String?) -> Void)
+
+        func log(state: String?) {
+            switch self {
+            case .osLog: LoggerMiddleware.osLog(state: state)
+            case let .file(url): LoggerMiddleware.fileLog(state: state, to: url)
+            case let .custom(closure): closure(state)
+            }
+        }
+    }
+
+    private static func osLog(state: String?) {
+        if let possibleStateChanges = state {
+            os_log(.debug, log: .default, "%{PUBLIC}@", possibleStateChanges)
+        } else {
+            os_log(.debug, log: .default, "%{PUBLIC}@", "🏛 No state mutation")
+        }
+    }
+
+    private static func fileLog(state: String?, to fileURL: URL) {
+        if let possibleStateChanges = state {
+            try? possibleStateChanges.write(toFile: fileURL.absoluteString, atomically: false, encoding: .utf8)
+        } else {
+            try? "🏛 No state mutation".write(toFile: fileURL.absoluteString, atomically: false, encoding: .utf8)
+        }
+    }
+}
+
+// MARK: State Diff Transform
+extension LoggerMiddleware {
+    public enum StateDiffTransform {
+        case diff(linesOfContext: Int = 2, prefixLines: String = "🏛 ")
+        case newStateOnly
+        case custom((StateType?, StateType) -> String?)
+
+        func transform(oldState: StateType?, newState: StateType) -> String? {
+            switch self {
+            case let .diff(linesOfContext, prefixLines):
+                let stateBefore = dumpToString(oldState)
+                let stateAfter =  dumpToString(newState)
+                return Difference.diff(old: stateBefore, new: stateAfter, linesOfContext: linesOfContext, prefixLines: prefixLines)
+            case .newStateOnly:
+                return dumpToString(newState)
+            case let .custom(closure):
+                return closure(oldState, newState)
+            }
+        }
+    }
+}
+
+// MARK: - Action
+// MARK: Action Logger
+extension LoggerMiddleware {
+    public enum ActionLogger {
+        case osLog
+        case file(URL)
+        case custom((String) -> Void)
+
+        func log(action: String) {
+            switch self {
+            case .osLog: LoggerMiddleware.osLog(action: action)
+            case let .file(url): LoggerMiddleware.fileLog(action: action, to: url)
+            case let .custom(closure): closure(action)
+            }
+        }
+    }
+
+    private static func osLog(action: String) {
+        os_log(.debug, log: .default, "%{PUBLIC}@", action)
+    }
+
+    private static func fileLog(action: String, to fileURL: URL) -> Void {
+        try? action.write(toFile: fileURL.absoluteString, atomically: false, encoding: .utf8)
+    }
+}
+
+// MARK: Action Transform
+extension LoggerMiddleware {
+    public enum ActionTransform {
+        case `default`
+        case actionNameOnly
+        case custom((InputActionType, ActionSource) -> String)
+
+        func transform(action: InputActionType, source: ActionSource) -> String {
+            switch self {
+            case .default: return "\n🕹 \(action)\n🎪 \(source.file.split(separator: "/").last ?? ""):\(source.line) \(source.function)"
+            case .actionNameOnly: return "\(action)"
+            case let .custom(closure): return closure(action, source)
+            }
+        }
     }
 }
