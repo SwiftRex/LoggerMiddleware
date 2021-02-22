@@ -125,6 +125,7 @@ extension LoggerMiddleware {
     public enum StateDiffTransform {
         case diff(linesOfContext: Int = 2, prefixLines: String = "🏛 ")
         case newStateOnly
+        case recursive(prefixLines: String = "🏛 ", stateName: String)
         case custom((StateType?, StateType) -> String?)
 
         func transform(oldState: StateType?, newState: StateType) -> String? {
@@ -136,10 +137,85 @@ extension LoggerMiddleware {
                 ?? "\(prefixLines) No state mutation"
             case .newStateOnly:
                 return dumpToString(newState)
+            case let .recursive(prefixLines, stateName):
+                return recursiveDiff(prefixLines: prefixLines, stateName: stateName, before: oldState, after: newState)
             case let .custom(closure):
                 return closure(oldState, newState)
             }
         }
+    }
+
+    public static func recursiveDiff(prefixLines: String, stateName: String, before: StateType?, after: StateType) -> String? {
+        // cuts the redundant newline character from the output
+        diff(prefix: prefixLines, name: stateName, lhs: before, rhs: after)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func diff<A>(prefix: String, name: String, level: Int = 0, lhs: A, rhs: A) -> String? {
+        let leftMirror = Mirror(reflecting: lhs)
+        let rightMirror = Mirror(reflecting: rhs)
+
+        // special handling for Dictionaries
+        if let left = lhs as? Dictionary<AnyHashable, Any>, let right = rhs as? Dictionary<AnyHashable, Any> {
+
+            let leftSorted = left.sorted { a, b in "\(a.key)" < "\(b.key)" }
+            let rightSorted = right.sorted { a, b in "\(a.key)" < "\(b.key)" }
+
+            let leftPrintable = leftSorted.map { key, value in "\(key): \(value)" }.joined(separator: ", ")
+            let rightPrintable = rightSorted.map { key, value in "\(key): \(value)" }.joined(separator: ", ")
+
+            // .difference(from:) gives unpleasant results
+            if leftPrintable == rightPrintable {
+                return nil
+            }
+
+            return "\(prefix).\(name): 📦 [\(leftPrintable)] → [\(rightPrintable)]"
+        }
+
+        // special handling for sets as well: order the contents, compare as strings
+        if let left = lhs as? Set<AnyHashable>, let right = rhs as? Set<AnyHashable> {
+            let leftSorted = left.map { "\($0)" }.sorted { a, b in a < b }
+            let rightSorted = right.map { "\($0)" }.sorted { a, b in a < b }
+
+            let leftPrintable = leftSorted.joined(separator: ", ")
+            let rightPrintable = rightSorted.joined(separator: ", ")
+
+            // .difference(from:) gives unpleasant results
+            if leftPrintable == rightPrintable {
+                return nil
+            }
+            return "\(prefix).\(name): 📦 <\(leftPrintable)> → <\(rightPrintable)>"
+        }
+
+        // if there are no children, compare lhs and rhs directly
+        if 0 == leftMirror.children.count {
+            if "\(lhs)" == "\(rhs)" {
+                return nil
+            } else {
+                return "\(prefix).\(name): \(lhs) → \(rhs)"
+            }
+        }
+
+        // there are children -> diff the object graph recursively
+        let strings: [String] = leftMirror.children.map({ leftChild  in
+            guard let rightChild = rightMirror.children.first(where: { $0.label == leftChild.label }) else {
+                return nil
+            }
+
+            let leftValue = leftChild.value
+            let rightValue = rightChild.value
+
+            let dot = (level > 0) ? "." : " "
+            return Self.diff(prefix: "\(prefix)\(dot)\(name)",
+                             name: leftChild.label ?? "",
+                             level: level + 1,
+                             lhs: leftValue,
+                             rhs: rightValue)
+        }).compactMap { $0 }
+
+        if strings.count > 0 {
+            return strings.joined(separator: "\n")
+        }
+        return nil
     }
 }
 
