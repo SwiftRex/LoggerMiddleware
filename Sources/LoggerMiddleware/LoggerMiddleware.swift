@@ -150,9 +150,23 @@ extension LoggerMiddleware {
         diff(prefix: prefixLines, name: stateName, lhs: before, rhs: after)?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func diff<A>(prefix: String, name: String, level: Int = 0, lhs: A, rhs: A) -> String? {
-        let leftMirror = Mirror(reflecting: lhs)
-        let rightMirror = Mirror(reflecting: rhs)
+    private static func diff<A>(prefix: String, name: String, level: Int = 0, lhs: A?, rhs: A?) -> String? {
+
+        guard let rightHandSide = rhs, let leftHandSide = lhs else {
+            if let rightHandSide = rhs {
+                return "\(prefix).\(name): nil → \(rightHandSide)"
+            }
+
+            if let leftHandSide = lhs {
+                return "\(prefix).\(name): \(leftHandSide) → nil"
+            }
+
+            // nil == lhs == rhs
+            return nil
+        }
+
+        let leftMirror = Mirror(reflecting: leftHandSide)
+        let rightMirror = Mirror(reflecting: rightHandSide)
 
         // special handling for Dictionaries
         if let left = lhs as? Dictionary<AnyHashable, Any>, let right = rhs as? Dictionary<AnyHashable, Any> {
@@ -188,28 +202,21 @@ extension LoggerMiddleware {
 
         // if there are no children, compare lhs and rhs directly
         if 0 == leftMirror.children.count {
-            if "\(lhs)" == "\(rhs)" {
+            if "\(leftHandSide)" == "\(rightHandSide)" {
                 return nil
             } else {
-                return "\(prefix).\(name): \(lhs) → \(rhs)"
+                return "\(prefix).\(name): \(leftHandSide) → \(rightHandSide)"
             }
         }
 
         // there are children -> diff the object graph recursively
         let strings: [String] = leftMirror.children.map({ leftChild  in
-            guard let rightChild = rightMirror.children.first(where: { $0.label == leftChild.label }) else {
-                return nil
-            }
-
-            let leftValue = leftChild.value
-            let rightValue = rightChild.value
-
-            let dot = (level > 0) ? "." : " "
-            return Self.diff(prefix: "\(prefix)\(dot)\(name)",
-                             name: leftChild.label ?? "",
+            let toDotOrNotToDot = (level > 0) ? "." : " "
+            return Self.diff(prefix: "\(prefix)\(toDotOrNotToDot)\(name)",
+                             name: leftChild.label ?? "#", // label might be missing for items in collections
                              level: level + 1,
-                             lhs: leftValue,
-                             rhs: rightValue)
+                             lhs: leftChild.value,
+                             rhs: rightMirror.children.first(where: { $0.label == leftChild.label })?.value)
         }).compactMap { $0 }
 
         if strings.count > 0 {

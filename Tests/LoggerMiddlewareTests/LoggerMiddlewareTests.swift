@@ -6,11 +6,14 @@ struct TestState: Equatable {
     public let a: Substate
     public let b: [Int]
     public let c: String
+    public let d: String?
+    public let e: String?
 }
 
 struct Substate: Equatable {
     public let x: Set<String>
-    public let y: [String: Int]
+    public let y1: [String: Int]
+    public let y2: [String: Int?]
     public let z: Bool
 }
 
@@ -31,26 +34,35 @@ final class LoggerMiddlewareTests: XCTestCase {
     func testStateDiff() {
         // given
         let beforeState: LoggerMiddleware<TestMiddleware>.StateType = TestState(a: Substate(x: ["SetB", "SetA"],
-                                                                                            y: ["one": 1, "eleven": 11],
+                                                                                            y1: ["one": 1, "eleven": 11],
+                                                                                            y2: ["one": 1, "eleven": 11, "zapp": 42],
                                                                                             z: true),
                                                                                 b: [0, 1],
-                                                                                c: "Foo")
+                                                                                c: "Foo",
+                                                                                d: "✨",
+                                                                                e: nil)
         let afterState: LoggerMiddleware<TestMiddleware>.StateType = TestState(a: Substate(x: ["SetB", "SetC"],
-                                                                                           y: ["one": 1, "twelve": 12],
+                                                                                           y1: ["one": 1, "twelve": 12],
+                                                                                           y2: ["one": 1, "twelve": 12, "zapp": nil],
                                                                                            z: false),
                                                                                 b: [0],
-                                                                                c: "Bar")
+                                                                                c: "Bar",
+                                                                                d: nil,
+                                                                                e: "🥚")
 
         // when
         let result: String? = LoggerMiddleware<TestMiddleware>.recursiveDiff(prefixLines: "🏛", stateName: "TestState", before: beforeState, after: afterState)
 
         // then
         let expected = """
-                       🏛 TestState.some.a.x: 📦 <SetA, SetB> → <SetB, SetC>
-                       🏛 TestState.some.a.y: 📦 [eleven: 11, one: 1] → [one: 1, twelve: 12]
-                       🏛 TestState.some.a.z: true → false
-                       🏛 TestState.some.b: 📦 [0, 1] → [0]
-                       🏛 TestState.some.c: Foo → Bar
+                       🏛 TestState.a.x: 📦 <SetA, SetB> → <SetB, SetC>
+                       🏛 TestState.a.y1: 📦 [eleven: 11, one: 1] → [one: 1, twelve: 12]
+                       🏛 TestState.a.y2: 📦 [eleven: Optional(11), one: Optional(1), zapp: Optional(42)] → [one: Optional(1), twelve: Optional(12), zapp: nil]
+                       🏛 TestState.a.z: true → false
+                       🏛 TestState.b.#: 1 → 0
+                       🏛 TestState.c: Foo → Bar
+                       🏛 TestState.d.some: ✨ → nil
+                       🏛 TestState.e: nil → Optional("🥚")
                        """
         XCTAssertEqual(result, expected)
     }
