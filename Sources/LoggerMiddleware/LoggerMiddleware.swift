@@ -67,7 +67,9 @@ public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType
             self.queue.async {
                 let actionMessage = self.actionTransform.transform(action: action, source: dispatcher)
                 self.actionPrinter.log(action: actionMessage)
-                self.stateDiffPrinter.log(state: self.stateDiffTransform.transform(oldState: stateBefore, newState: stateAfter))
+                if let diffString = self.stateDiffTransform.transform(oldState: stateBefore, newState: stateAfter) {
+                    self.stateDiffPrinter.log(state: diffString)
+                }
             }
         }
     }
@@ -123,9 +125,9 @@ extension LoggerMiddleware {
     public enum StateDiffTransform {
         case diff(linesOfContext: Int = 2, prefixLines: String = "🏛 ")
         case newStateOnly
-        case custom((StateType?, StateType) -> String)
+        case custom((StateType?, StateType) -> String?)
 
-        func transform(oldState: StateType?, newState: StateType) -> String {
+        func transform(oldState: StateType?, newState: StateType) -> String? {
             switch self {
             case let .diff(linesOfContext, prefixLines):
                 let stateBefore = dumpToString(oldState)
