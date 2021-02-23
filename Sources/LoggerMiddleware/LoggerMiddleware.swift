@@ -165,11 +165,8 @@ extension LoggerMiddleware {
             return nil
         }
 
-        let leftMirror = Mirror(reflecting: leftHandSide)
-        let rightMirror = Mirror(reflecting: rightHandSide)
-
-        // special handling for Dictionaries
-        if let left = lhs as? Dictionary<AnyHashable, Any>, let right = rhs as? Dictionary<AnyHashable, Any> {
+        // special handling for Dictionaries: stringify and order the keys before comparing
+        if let left = leftHandSide as? Dictionary<AnyHashable, Any>, let right = rightHandSide as? Dictionary<AnyHashable, Any> {
 
             let leftSorted = left.sorted { a, b in "\(a.key)" < "\(b.key)" }
             let rightSorted = right.sorted { a, b in "\(a.key)" < "\(b.key)" }
@@ -186,7 +183,7 @@ extension LoggerMiddleware {
         }
 
         // special handling for sets as well: order the contents, compare as strings
-        if let left = lhs as? Set<AnyHashable>, let right = rhs as? Set<AnyHashable> {
+        if let left = leftHandSide as? Set<AnyHashable>, let right = rightHandSide as? Set<AnyHashable> {
             let leftSorted = left.map { "\($0)" }.sorted { a, b in a < b }
             let rightSorted = right.map { "\($0)" }.sorted { a, b in a < b }
 
@@ -200,7 +197,10 @@ extension LoggerMiddleware {
             return "\(prefix).\(name): 📦 <\(leftPrintable)> → <\(rightPrintable)>"
         }
 
-        // if there are no children, compare lhs and rhs directly
+        let leftMirror = Mirror(reflecting: leftHandSide)
+        let rightMirror = Mirror(reflecting: rightHandSide)
+
+        // if there are no children, compare leftHandSide and rightHandSide directly
         if 0 == leftMirror.children.count {
             if "\(leftHandSide)" == "\(rightHandSide)" {
                 return nil
@@ -213,7 +213,7 @@ extension LoggerMiddleware {
         let strings: [String] = leftMirror.children.map({ leftChild  in
             let toDotOrNotToDot = (level > 0) ? "." : " "
             return Self.diff(prefix: "\(prefix)\(toDotOrNotToDot)\(name)",
-                             name: leftChild.label ?? "#", // label might be missing for items in collections
+                             name: leftChild.label ?? "#", // label might be missing for items in collections, # represents a collection element
                              level: level + 1,
                              lhs: leftChild.value,
                              rhs: rightMirror.children.first(where: { $0.label == leftChild.label })?.value)
