@@ -125,7 +125,7 @@ extension LoggerMiddleware {
     public enum StateDiffTransform {
         case diff(linesOfContext: Int = 2, prefixLines: String = "🏛 ")
         case newStateOnly
-        case recursive(prefixLines: String = "🏛 ", stateName: String)
+        case recursive(prefixLines: String = "🏛 ", stateName: String, filters: [String]? = nil)
         case custom((StateType?, StateType) -> String?)
 
         func transform(oldState: StateType?, newState: StateType) -> String? {
@@ -137,20 +137,20 @@ extension LoggerMiddleware {
                 ?? "\(prefixLines) No state mutation"
             case .newStateOnly:
                 return dumpToString(newState)
-            case let .recursive(prefixLines, stateName):
-                return recursiveDiff(prefixLines: prefixLines, stateName: stateName, before: oldState, after: newState)
+            case let .recursive(prefixLines, stateName, filters):
+                return recursiveDiff(prefixLines: prefixLines, stateName: stateName, filters: filters, before: oldState, after: newState)
             case let .custom(closure):
                 return closure(oldState, newState)
             }
         }
     }
 
-    public static func recursiveDiff(prefixLines: String, stateName: String, before: StateType?, after: StateType) -> String? {
+    public static func recursiveDiff(prefixLines: String, stateName: String, filters: [String]? = nil, before: StateType?, after: StateType) -> String? {
         // cuts the redundant newline character from the output
-        diff(prefix: prefixLines, name: stateName, lhs: before, rhs: after)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        diff(prefix: prefixLines, name: stateName, filters: filters, lhs: before, rhs: after)?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func diff<A>(prefix: String, name: String, level: Int = 0, lhs: A?, rhs: A?) -> String? {
+    private static func diff<A>(prefix: String, name: String, level: Int = 0, filters: [String]? = nil, lhs: A?, rhs: A?) -> String? {
 
         guard let rightHandSide = rhs, let leftHandSide = lhs else {
             if let rightHandSide = rhs {
@@ -215,9 +215,19 @@ extension LoggerMiddleware {
             return Self.diff(prefix: "\(prefix)\(toDotOrNotToDot)\(name)",
                              name: leftChild.label ?? "#", // label might be missing for items in collections, # represents a collection element
                              level: level + 1,
+                             filters: filters,
                              lhs: leftChild.value,
                              rhs: rightMirror.children.first(where: { $0.label == leftChild.label })?.value)
-        }).compactMap { $0 }
+        })
+        .compactMap { $0 }
+        .filter { (diffLine: String) -> Bool in
+            if nil == filters?.first(where: { filterString in
+                diffLine.contains(filterString)
+            }) {
+                return true
+            }
+            return false
+        }
 
         if strings.count > 0 {
             return strings.joined(separator: "\n")
