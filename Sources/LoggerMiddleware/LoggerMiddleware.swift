@@ -221,12 +221,10 @@ extension LoggerMiddleware {
         })
         .compactMap { $0 }
         .filter { (diffLine: String) -> Bool in
-            if nil == filters?.first(where: { filterString in
+            // filter diffLine if it contains a filterString
+            nil == filters?.first(where: { filterString in
                 diffLine.contains(filterString)
-            }) {
-                return true
-            }
-            return false
+            })
         }
 
         if strings.count > 0 {
