@@ -6,6 +6,7 @@ extension Middleware where StateType: Equatable {
     public func logger(
         actionTransform: LoggerMiddleware<Self>.ActionTransform = .default(),
         actionPrinter: LoggerMiddleware<Self>.ActionLogger = .osLog,
+        actionFilter: @escaping (InputActionType) -> Bool = { _ in true },
         stateDiffTransform: LoggerMiddleware<Self>.StateDiffTransform = .diff(),
         stateDiffPrinter: LoggerMiddleware<Self>.StateLogger = .osLog,
         queue: DispatchQueue = .main
@@ -30,6 +31,7 @@ public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType
     private var getState: GetState<StateType>?
     private let actionTransform: ActionTransform
     private let actionPrinter: ActionLogger
+    private let actionFilter: (InputActionType) -> Bool
     private let stateDiffTransform: StateDiffTransform
     private let stateDiffPrinter: StateLogger
 
@@ -37,6 +39,7 @@ public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType
         _ middleware: M,
         actionTransform: ActionTransform,
         actionPrinter: ActionLogger,
+        actionFilter: @escaping (InputActionType) -> Bool = { _ in true },
         stateDiffTransform: StateDiffTransform,
         stateDiffPrinter: StateLogger,
         queue: DispatchQueue
@@ -44,6 +47,7 @@ public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType
         self.middleware = middleware
         self.actionTransform = actionTransform
         self.actionPrinter = actionPrinter
+        self.actionFilter = actionFilter
         self.stateDiffTransform = stateDiffTransform
         self.stateDiffPrinter = stateDiffPrinter
         self.queue = queue
@@ -55,6 +59,7 @@ public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType
     }
 
     public func handle(action: InputActionType, from dispatcher: ActionSource, afterReducer: inout AfterReducer) {
+        guard actionFilter(action) else { return }
         let stateBefore = getState?()
         var innerAfterReducer = AfterReducer.doNothing()
 
