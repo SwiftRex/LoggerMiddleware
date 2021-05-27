@@ -121,7 +121,7 @@ extension LoggerMiddleware {
     }
 
     private static func fileLog(state: String, to fileURL: URL) {
-        try? state.write(toFile: fileURL.absoluteString, atomically: false, encoding: .utf8)
+        try? state.write(toFile: fileURL.absoluteString, atomically: false, encoding: String.Encoding.utf8)
     }
 }
 
@@ -189,8 +189,8 @@ extension LoggerMiddleware {
 
         // special handling for sets as well: order the contents, compare as strings
         if let left = leftHandSide as? Set<AnyHashable>, let right = rightHandSide as? Set<AnyHashable> {
-            let leftSorted = left.map { "\($0)" }.sorted { a, b in a < b }
-            let rightSorted = right.map { "\($0)" }.sorted { a, b in a < b }
+            let leftSorted: [String] = left.map { (lft: AnyHashable) in "\(lft)" }.sorted { a, b in a < b }
+            let rightSorted: [String] = right.map { (rgt: AnyHashable) in "\(rgt)" }.sorted { a, b in a < b }
 
             let leftPrintable = leftSorted.joined(separator: ", ")
             let rightPrintable = rightSorted.joined(separator: ", ")
@@ -215,7 +215,7 @@ extension LoggerMiddleware {
         }
 
         // there are children -> diff the object graph recursively
-        let strings: [String] = leftMirror.children.map({ leftChild  in
+        let strings: [String] = leftMirror.children.map({ (leftChild: Mirror.Child) -> String? in
             let toDotOrNotToDot = (level > 0) ? "." : " "
             return Self.diff(prefix: "\(prefix)\(toDotOrNotToDot)\(name)",
                              name: leftChild.label ?? "#", // label might be missing for items in collections, # represents a collection element
@@ -227,7 +227,7 @@ extension LoggerMiddleware {
         .compactMap { $0 }
         .filter { (diffLine: String) -> Bool in
             // filter diffLine if it contains a filterString
-            false == (filters ?? []).contains(where: { filterString in
+            false == (filters ?? []).contains(where: { (filterString: String) -> Bool in
                 diffLine.contains(filterString)
             })
         }

@@ -20,6 +20,9 @@ let package = Package(
             dependencies: [
                 .product(name: "CombineRex", package: "SwiftRex")
             ]
+//            Enable this for build performance warnings. Works only when building the Package, works not when building the workspace! Obey the comma.
+//            , swiftSettings: [SwiftSetting.unsafeFlags(["-Xfrontend", "-warn-long-expression-type-checking=10", "-Xfrontend", "-warn-long-function-bodies=10"])]
+
         ),
         .testTarget(name: "LoggerMiddlewareTests", dependencies: ["LoggerMiddleware"])
     ]
