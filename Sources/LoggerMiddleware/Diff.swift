@@ -20,13 +20,17 @@ public struct Difference<A> {
 extension Difference where A == String {
     public static func diff(old: String, new: String, linesOfContext: Int, prefixLines: String = "") -> String? {
         guard old != new else { return nil }
-        let oldSplit = old.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        let newSplit = new.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let oldSplit: [String] = old.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let newSplit: [String] = new.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
 
         return chunk(
             diff: Difference.diff(oldSplit, newSplit),
             context: linesOfContext
-        ).lazy.flatMap { [$0.patchMark] + $0.lines }.map { "\(prefixLines)\($0)" }.joined(separator: "\n")
+        )
+        .lazy
+        .flatMap { (hunk: Hunk) -> [String] in [hunk.patchMark] + hunk.lines }
+        .map { (line: String) -> String in "\(prefixLines)\(line)" }
+        .joined(separator: "\n")
     }
 }
 
