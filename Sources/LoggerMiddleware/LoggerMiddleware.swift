@@ -103,25 +103,20 @@ extension LoggerMiddleware {
 // MARK: State Logger
 extension LoggerMiddleware {
     public enum StateLogger {
+        /// Logs using os_log.
         case osLog
-        case file(URL)
+        /// Appends the messages to a file. The file must exist!
+        case file(URL, DateFormatter)
+        /// A custom handler.
         case custom((String) -> Void)
 
         func log(state: String) {
             switch self {
-            case .osLog: LoggerMiddleware.osLog(state: state)
-            case let .file(url): LoggerMiddleware.fileLog(state: state, to: url)
+            case .osLog: LoggerMiddleware.osLog(state)
+            case let .file(url, dateFormatter): LoggerMiddleware.fileLog(state, to: url, dateFormatter: dateFormatter)
             case let .custom(closure): closure(state)
             }
         }
-    }
-
-    private static func osLog(state: String) {
-        os_log(.debug, log: .default, "%{PUBLIC}@", state)
-    }
-
-    private static func fileLog(state: String, to fileURL: URL) {
-        try? state.write(toFile: fileURL.absoluteString, atomically: false, encoding: String.Encoding.utf8)
     }
 }
 
@@ -243,32 +238,27 @@ extension LoggerMiddleware {
 // MARK: Action Logger
 extension LoggerMiddleware {
     public enum ActionLogger {
+        /// Logs using os_log.
         case osLog
-        case file(URL)
+        /// Appends the messages to a file. The file must exist!
+        case file(URL, DateFormatter)
+        /// A custom handler.
         case custom((String) -> Void)
 
         func log(action: String) {
             switch self {
-            case .osLog: LoggerMiddleware.osLog(action: action)
-            case let .file(url): LoggerMiddleware.fileLog(action: action, to: url)
+            case .osLog: LoggerMiddleware.osLog(action)
+            case let .file(url, dateFormatter): LoggerMiddleware.fileLog(action, to: url, dateFormatter: dateFormatter)
             case let .custom(closure): closure(action)
             }
         }
-    }
-
-    private static func osLog(action: String) {
-        os_log(.debug, log: .default, "%{PUBLIC}@", action)
-    }
-
-    private static func fileLog(action: String, to fileURL: URL) -> Void {
-        try? action.write(toFile: fileURL.absoluteString, atomically: false, encoding: .utf8)
     }
 }
 
 // MARK: Action Transform
 extension LoggerMiddleware {
     public enum ActionTransform {
-        case `default`(actionPrefix: String = "\n🕹 ", sourcePrefix: String = "\n🎪 ")
+        case `default`(actionPrefix: String = "🕹 ", sourcePrefix: String = " 🎪 ")
         case actionNameOnly
         case custom((InputActionType, ActionSource) -> String)
 
@@ -283,4 +273,23 @@ extension LoggerMiddleware {
             }
         }
     }
+}
+
+// MARK: Log output
+
+extension LoggerMiddleware {
+
+    fileprivate static func fileLog(_ message: String, to fileURL: URL, dateFormatter: DateFormatter) {
+        guard let fileUpdater = try? FileHandle(forUpdating: fileURL),
+              let data = (dateFormatter.string(from: Date()) + " " + message + "\n")
+                .data(using: String.Encoding.utf8) else { return }
+        fileUpdater.seekToEndOfFile()
+        fileUpdater.write(data)
+        fileUpdater.closeFile()
+    }
+
+    fileprivate static func osLog(_ message: String) {
+        os_log(.debug, log: .default, "%{PUBLIC}@", message)
+    }
+
 }
