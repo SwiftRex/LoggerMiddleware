@@ -106,14 +106,14 @@ extension LoggerMiddleware {
         /// Logs using os_log.
         case osLog
         /// Appends the messages to a file. The file must exist!
-        case file(URL, DateFormatter)
+        case file(FileAppender)
         /// A custom handler.
         case custom((String) -> Void)
 
         func log(state: String) {
             switch self {
             case .osLog: LoggerMiddleware.osLog(state)
-            case let .file(url, dateFormatter): LoggerMiddleware.fileLog(state, to: url, dateFormatter: dateFormatter)
+            case let .file(fileAppender): fileAppender.write(state)
             case let .custom(closure): closure(state)
             }
         }
@@ -241,14 +241,14 @@ extension LoggerMiddleware {
         /// Logs using os_log.
         case osLog
         /// Appends the messages to a file. The file must exist!
-        case file(URL, DateFormatter)
+        case file(FileAppender)
         /// A custom handler.
         case custom((String) -> Void)
 
         func log(action: String) {
             switch self {
             case .osLog: LoggerMiddleware.osLog(action)
-            case let .file(url, dateFormatter): LoggerMiddleware.fileLog(action, to: url, dateFormatter: dateFormatter)
+            case let .file(fileappender): fileappender.write(action)
             case let .custom(closure): closure(action)
             }
         }
@@ -279,17 +279,44 @@ extension LoggerMiddleware {
 
 extension LoggerMiddleware {
 
-    fileprivate static func fileLog(_ message: String, to fileURL: URL, dateFormatter: DateFormatter) {
-        guard let fileUpdater = try? FileHandle(forUpdating: fileURL),
-              let data = (dateFormatter.string(from: Date()) + " " + message + "\n")
-                .data(using: String.Encoding.utf8) else { return }
-        fileUpdater.seekToEndOfFile()
-        fileUpdater.write(data)
-        fileUpdater.closeFile()
-    }
-
     fileprivate static func osLog(_ message: String) {
         os_log(.debug, log: .default, "%{PUBLIC}@", message)
     }
 
 }
+
+public struct FileAppender {
+    private let url: URL
+    private let date: () -> Date
+    private let dateFormatter: DateFormatter
+    private let writer: (URL, Data) -> Void
+
+    public init(url: URL, date: @escaping () -> Date, dateFormatter: DateFormatter, writer: @escaping (URL, Data) -> Void) {
+        self.url = url
+        self.date = date
+        self.dateFormatter = dateFormatter
+        self.writer = writer
+    }
+
+    public func write(_ message: String) {
+        guard let data = (dateFormatter.string(from: date()) + " " + message + "\n").data(using: String.Encoding.utf8) else { return }
+        writer(url, data)
+    }
+}
+
+extension FileAppender {
+    public static func live(url: URL, dateFormatter: DateFormatter = .init(), date: @escaping () -> Date = Date.init, fileHandle: @escaping (URL) throws -> FileHandle = FileHandle.init(forUpdating:)) -> FileAppender {
+        FileAppender(
+            url: url,
+            date: date,
+            dateFormatter: dateFormatter,
+            writer: { url, data in
+                guard let fileUpdater = try? fileHandle(url) else { return }
+                fileUpdater.seekToEndOfFile()
+                fileUpdater.write(data)
+                fileUpdater.closeFile()
+            }
+        )
+    }
+}
+
