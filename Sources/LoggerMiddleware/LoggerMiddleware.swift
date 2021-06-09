@@ -103,25 +103,20 @@ extension LoggerMiddleware {
 // MARK: State Logger
 extension LoggerMiddleware {
     public enum StateLogger {
+        /// Logs using os_log.
         case osLog
-        case file(URL)
+        /// Appends the messages to a file. The file must exist!
+        case file(FileAppender)
+        /// A custom handler.
         case custom((String) -> Void)
 
         func log(state: String) {
             switch self {
-            case .osLog: LoggerMiddleware.osLog(state: state)
-            case let .file(url): LoggerMiddleware.fileLog(state: state, to: url)
+            case .osLog: LoggerMiddleware.osLog(state)
+            case let .file(fileAppender): fileAppender.write(state)
             case let .custom(closure): closure(state)
             }
         }
-    }
-
-    private static func osLog(state: String) {
-        os_log(.debug, log: .default, "%{PUBLIC}@", state)
-    }
-
-    private static func fileLog(state: String, to fileURL: URL) {
-        try? state.write(toFile: fileURL.absoluteString, atomically: false, encoding: String.Encoding.utf8)
     }
 }
 
@@ -243,32 +238,27 @@ extension LoggerMiddleware {
 // MARK: Action Logger
 extension LoggerMiddleware {
     public enum ActionLogger {
+        /// Logs using os_log.
         case osLog
-        case file(URL)
+        /// Appends the messages to a file. The file must exist!
+        case file(FileAppender)
+        /// A custom handler.
         case custom((String) -> Void)
 
         func log(action: String) {
             switch self {
-            case .osLog: LoggerMiddleware.osLog(action: action)
-            case let .file(url): LoggerMiddleware.fileLog(action: action, to: url)
+            case .osLog: LoggerMiddleware.osLog(action)
+            case let .file(fileappender): fileappender.write(action)
             case let .custom(closure): closure(action)
             }
         }
-    }
-
-    private static func osLog(action: String) {
-        os_log(.debug, log: .default, "%{PUBLIC}@", action)
-    }
-
-    private static func fileLog(action: String, to fileURL: URL) -> Void {
-        try? action.write(toFile: fileURL.absoluteString, atomically: false, encoding: .utf8)
     }
 }
 
 // MARK: Action Transform
 extension LoggerMiddleware {
     public enum ActionTransform {
-        case `default`(actionPrefix: String = "\n🕹 ", sourcePrefix: String = "\n🎪 ")
+        case `default`(actionPrefix: String = "🕹 ", sourcePrefix: String = " 🎪 ")
         case actionNameOnly
         case custom((InputActionType, ActionSource) -> String)
 
@@ -284,3 +274,49 @@ extension LoggerMiddleware {
         }
     }
 }
+
+// MARK: Log output
+
+extension LoggerMiddleware {
+
+    fileprivate static func osLog(_ message: String) {
+        os_log(.debug, log: .default, "%{PUBLIC}@", message)
+    }
+
+}
+
+public struct FileAppender {
+    private let url: URL
+    private let date: () -> Date
+    private let dateFormatter: DateFormatter
+    private let writer: (URL, Data) -> Void
+
+    public init(url: URL, date: @escaping () -> Date, dateFormatter: DateFormatter, writer: @escaping (URL, Data) -> Void) {
+        self.url = url
+        self.date = date
+        self.dateFormatter = dateFormatter
+        self.writer = writer
+    }
+
+    public func write(_ message: String) {
+        guard let data = (dateFormatter.string(from: date()) + " " + message + "\n").data(using: String.Encoding.utf8) else { return }
+        writer(url, data)
+    }
+}
+
+extension FileAppender {
+    public static func live(url: URL, dateFormatter: DateFormatter = .init(), date: @escaping () -> Date = Date.init, fileHandle: @escaping (URL) throws -> FileHandle = FileHandle.init(forUpdating:)) -> FileAppender {
+        FileAppender(
+            url: url,
+            date: date,
+            dateFormatter: dateFormatter,
+            writer: { url, data in
+                guard let fileUpdater = try? fileHandle(url) else { return }
+                fileUpdater.seekToEndOfFile()
+                fileUpdater.write(data)
+                fileUpdater.closeFile()
+            }
+        )
+    }
+}
+
