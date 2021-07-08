@@ -84,6 +84,7 @@ extension LoggerMiddleware {
     public static func `default`(
         actionTransform: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.ActionTransform = .default(),
         actionPrinter: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.ActionLogger = .osLog,
+        actionFilter: @escaping (InputActionType) -> Bool = { _ in true },
         stateDiffTransform: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.StateDiffTransform = .diff(),
         stateDiffPrinter: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.StateLogger = .osLog,
         queue: DispatchQueue = .main
@@ -92,6 +93,7 @@ extension LoggerMiddleware {
             IdentityMiddleware(),
             actionTransform: actionTransform,
             actionPrinter: actionPrinter,
+            actionFilter: actionFilter,
             stateDiffTransform: stateDiffTransform,
             stateDiffPrinter: stateDiffPrinter,
             queue: queue
