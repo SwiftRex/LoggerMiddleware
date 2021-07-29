@@ -24,8 +24,8 @@
         "repositoryURL": "https://github.com/SwiftRex/SwiftRex.git",
         "state": {
           "branch": null,
-          "revision": "dd28fc14902cc1c918241e6768ec89d13ee91f78",
-          "version": "0.8.2"
+          "revision": "660ba8ec5a79bc30f152955f9d8ea0b69ba6b466",
+          "version": "0.8.6"
         }
       }
     ]
