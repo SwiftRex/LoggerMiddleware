@@ -15,6 +15,7 @@ extension Middleware where StateType: Equatable {
             self,
             actionTransform: actionTransform,
             actionPrinter: actionPrinter,
+            actionFilter: actionFilter,
             stateDiffTransform: stateDiffTransform,
             stateDiffPrinter: stateDiffPrinter,
             queue: queue
