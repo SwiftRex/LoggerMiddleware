@@ -2,32 +2,31 @@ import Foundation
 import os.log
 import SwiftRex
 
-extension Middleware where StateType: Equatable {
+extension MiddlewareProtocol where StateType: Equatable {
     public func logger(
-        actionTransform: LoggerMiddleware<Self>.ActionTransform = .default(),
-        actionPrinter: LoggerMiddleware<Self>.ActionLogger = .osLog,
+        actionTransform: LoggerMiddleware<InputActionType, StateType>.ActionTransform = .default(),
+        actionPrinter: LoggerMiddleware<InputActionType, StateType>.ActionLogger = .osLog,
         actionFilter: @escaping (InputActionType) -> Bool = { _ in true },
-        stateDiffTransform: LoggerMiddleware<Self>.StateDiffTransform = .diff(),
-        stateDiffPrinter: LoggerMiddleware<Self>.StateLogger = .osLog,
+        stateDiffTransform: LoggerMiddleware<InputActionType, StateType>.StateDiffTransform = .diff(),
+        stateDiffPrinter: LoggerMiddleware<InputActionType, StateType>.StateLogger = .osLog,
         queue: DispatchQueue = .main
-    ) -> LoggerMiddleware<Self> {
+    ) -> ComposedMiddleware<InputActionType, OutputActionType, StateType> {
         LoggerMiddleware(
-            self,
             actionTransform: actionTransform,
             actionPrinter: actionPrinter,
             actionFilter: actionFilter,
             stateDiffTransform: stateDiffTransform,
             stateDiffPrinter: stateDiffPrinter,
             queue: queue
-        )
+        ).lift(outputAction: { (_: Never) -> OutputActionType in }) <> self
     }
 }
 
-public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType: Equatable {
-    public typealias InputActionType = M.InputActionType
-    public typealias OutputActionType = M.OutputActionType
-    public typealias StateType = M.StateType
-    private let middleware: M
+public final class LoggerMiddleware<Action, State: Equatable>: MiddlewareProtocol {
+    public typealias InputActionType = Action
+    public typealias OutputActionType = Never
+    public typealias StateType = State
+
     private let queue: DispatchQueue
     private var getState: GetState<StateType>?
     private let actionTransform: ActionTransform
@@ -37,7 +36,6 @@ public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType
     private let stateDiffPrinter: StateLogger
 
     init(
-        _ middleware: M,
         actionTransform: ActionTransform,
         actionPrinter: ActionLogger,
         actionFilter: @escaping (InputActionType) -> Bool = { _ in true },
@@ -45,7 +43,6 @@ public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType
         stateDiffPrinter: StateLogger,
         queue: DispatchQueue
     ) {
-        self.middleware = middleware
         self.actionTransform = actionTransform
         self.actionPrinter = actionPrinter
         self.actionFilter = actionFilter
@@ -54,19 +51,11 @@ public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType
         self.queue = queue
     }
 
-    public func receiveContext(getState: @escaping GetState<StateType>, output: AnyActionHandler<OutputActionType>) {
-        self.getState = getState
-        middleware.receiveContext(getState: getState, output: output)
-    }
-
-    public func handle(action: InputActionType, from dispatcher: ActionSource, afterReducer: inout AfterReducer) {
-        guard actionFilter(action) else { return }
+    public func handle(action: Action, from dispatcher: ActionSource, state: @escaping GetState<State>) -> IO<Never> {
+        guard actionFilter(action) else { return .pure() }
         let stateBefore = getState?()
-        var innerAfterReducer = AfterReducer.doNothing()
 
-        middleware.handle(action: action, from: dispatcher, afterReducer: &innerAfterReducer)
-
-        afterReducer = innerAfterReducer <> .do { [weak self] in
+        return IO { [weak self] _ in
             guard let self = self,
                   let stateAfter = self.getState?() else { return }
 
@@ -83,15 +72,14 @@ public final class LoggerMiddleware<M: Middleware>: Middleware where M.StateType
 
 extension LoggerMiddleware {
     public static func `default`(
-        actionTransform: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.ActionTransform = .default(),
-        actionPrinter: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.ActionLogger = .osLog,
+        actionTransform: LoggerMiddleware<InputActionType, StateType>.ActionTransform = .default(),
+        actionPrinter: LoggerMiddleware<InputActionType, StateType>.ActionLogger = .osLog,
         actionFilter: @escaping (InputActionType) -> Bool = { _ in true },
-        stateDiffTransform: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.StateDiffTransform = .diff(),
-        stateDiffPrinter: LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>>.StateLogger = .osLog,
+        stateDiffTransform: LoggerMiddleware<InputActionType, StateType>.StateDiffTransform = .diff(),
+        stateDiffPrinter: LoggerMiddleware<InputActionType, StateType>.StateLogger = .osLog,
         queue: DispatchQueue = .main
-    ) -> LoggerMiddleware<IdentityMiddleware<InputActionType, OutputActionType, StateType>> {
+    ) -> LoggerMiddleware<InputActionType, StateType> {
         .init(
-            IdentityMiddleware(),
             actionTransform: actionTransform,
             actionPrinter: actionPrinter,
             actionFilter: actionFilter,
