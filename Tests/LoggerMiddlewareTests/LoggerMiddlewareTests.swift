@@ -17,42 +17,41 @@ struct Substate: Equatable {
     public let z: Bool
 }
 
-struct TestMiddleware: Middleware {
-    func receiveContext(getState: @escaping GetState<TestState>, output: AnyActionHandler<Int>) {
+struct TestMiddleware: MiddlewareProtocol {
+    
+    func handle(action: Int, from dispatcher: ActionSource, state: @escaping GetState<TestState>) -> IO<Int> {
+        .pure()
     }
-
-    func handle(action: Int, from dispatcher: ActionSource, afterReducer: inout AfterReducer) {
-    }
-
+    
     typealias InputActionType = Int
     typealias OutputActionType = Int
     typealias StateType = TestState
 }
 
 final class LoggerMiddlewareTests: XCTestCase {
-
+    
     func testStateDiff() {
         // given
-        let beforeState: LoggerMiddleware<TestMiddleware>.StateType = TestState(a: Substate(x: ["SetB", "SetA"],
-                                                                                            y1: ["one": 1, "eleven": 11],
-                                                                                            y2: ["one": 1, "eleven": 11, "zapp": 42],
-                                                                                            z: true),
-                                                                                b: [0, 1],
-                                                                                c: "Foo",
-                                                                                d: "✨",
-                                                                                e: nil)
-        let afterState: LoggerMiddleware<TestMiddleware>.StateType = TestState(a: Substate(x: ["SetB", "SetC"],
-                                                                                           y1: ["one": 1, "twelve": 12],
-                                                                                           y2: ["one": 1, "twelve": 12, "zapp": nil],
-                                                                                           z: false),
-                                                                                b: [0],
-                                                                                c: "Bar",
-                                                                                d: nil,
-                                                                                e: "🥚")
-
+        let beforeState = TestState(a: Substate(x: ["SetB", "SetA"],
+                                                y1: ["one": 1, "eleven": 11],
+                                                y2: ["one": 1, "eleven": 11, "zapp": 42],
+                                                z: true),
+                                    b: [0, 1],
+                                    c: "Foo",
+                                    d: "✨",
+                                    e: nil)
+        let afterState = TestState(a: Substate(x: ["SetB", "SetC"],
+                                               y1: ["one": 1, "twelve": 12],
+                                               y2: ["one": 1, "twelve": 12, "zapp": nil],
+                                               z: false),
+                                   b: [0],
+                                   c: "Bar",
+                                   d: nil,
+                                   e: "🥚")
+        
         // when
-        let result: String? = LoggerMiddleware<TestMiddleware>.recursiveDiff(prefixLines: "🏛", stateName: "TestState", before: beforeState, after: afterState)
-
+        let result: String? = LoggerMiddleware<Int, TestState>.recursiveDiff(prefixLines: "🏛", stateName: "TestState", before: beforeState, after: afterState)
+        
         // then
         let expected = """
                        🏛 TestState.a.x: 📦 <SetA, SetB> → <SetB, SetC>
@@ -66,29 +65,29 @@ final class LoggerMiddlewareTests: XCTestCase {
                        """
         XCTAssertEqual(result, expected)
     }
-
-
+    
+    
     func testStateDiffWithFilters() {
         // given
-        let beforeState: LoggerMiddleware<TestMiddleware>.StateType = TestState(a: Substate(x: ["SetB", "SetA"],
-                                                                                            y1: ["one": 1, "eleven": 11],
-                                                                                            y2: ["one": 1, "eleven": 11, "zapp": 42],
-                                                                                            z: true),
-                                                                                b: [0, 1],
-                                                                                c: "Foo",
-                                                                                d: "✨",
-                                                                                e: nil)
-        let afterState: LoggerMiddleware<TestMiddleware>.StateType = TestState(a: Substate(x: ["SetB", "SetC"],
-                                                                                           y1: ["one": 1, "twelve": 12],
-                                                                                           y2: ["one": 1, "twelve": 12, "zapp": nil],
-                                                                                           z: false),
-                                                                                b: [0],
-                                                                                c: "Bar",
-                                                                                d: nil,
-                                                                                e: "🥚")
-
+        let beforeState = TestState(a: Substate(x: ["SetB", "SetA"],
+                                                y1: ["one": 1, "eleven": 11],
+                                                y2: ["one": 1, "eleven": 11, "zapp": 42],
+                                                z: true),
+                                    b: [0, 1],
+                                    c: "Foo",
+                                    d: "✨",
+                                    e: nil)
+        let afterState = TestState(a: Substate(x: ["SetB", "SetC"],
+                                               y1: ["one": 1, "twelve": 12],
+                                               y2: ["one": 1, "twelve": 12, "zapp": nil],
+                                               z: false),
+                                   b: [0],
+                                   c: "Bar",
+                                   d: nil,
+                                   e: "🥚")
+        
         // when
-        let result: String? = LoggerMiddleware<TestMiddleware>.recursiveDiff(prefixLines: "🏛",
+        let result: String? = LoggerMiddleware<Int, TestState>.recursiveDiff(prefixLines: "🏛",
                                                                              stateName: "TestState",
                                                                              filters: [
                                                                                 " TestState.a.y2",
@@ -96,7 +95,7 @@ final class LoggerMiddlewareTests: XCTestCase {
                                                                              ],
                                                                              before: beforeState,
                                                                              after: afterState)
-
+        
         // then
         let expected = """
                        🏛 TestState.a.x: 📦 <SetA, SetB> → <SetB, SetC>
@@ -108,7 +107,7 @@ final class LoggerMiddlewareTests: XCTestCase {
                        """
         XCTAssertEqual(result, expected)
     }
-
+    
     static var allTests = [
         ("testStateDiff", testStateDiff),
     ]

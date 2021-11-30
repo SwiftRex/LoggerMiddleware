@@ -12,7 +12,7 @@ let package = Package(
         .library(name: "LoggerMiddleware", targets: ["LoggerMiddleware"])
     ],
     dependencies: [
-        .package(url: "https://github.com/SwiftRex/SwiftRex.git", .upToNextMajor(from: "0.8.6"))
+        .package(url: "https://github.com/SwiftRex/SwiftRex.git", .upToNextMajor(from: "0.8.8"))
     ],
     targets: [
         .target(
