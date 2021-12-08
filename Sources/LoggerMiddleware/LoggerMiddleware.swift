@@ -28,7 +28,6 @@ public final class LoggerMiddleware<Action, State: Equatable>: MiddlewareProtoco
     public typealias StateType = State
 
     private let queue: DispatchQueue
-    private var getState: GetState<StateType>?
     private let actionTransform: ActionTransform
     private let actionPrinter: ActionLogger
     private let actionFilter: (InputActionType) -> Bool
@@ -53,12 +52,13 @@ public final class LoggerMiddleware<Action, State: Equatable>: MiddlewareProtoco
 
     public func handle(action: Action, from dispatcher: ActionSource, state: @escaping GetState<State>) -> IO<Never> {
         guard actionFilter(action) else { return .pure() }
-        let stateBefore = getState?()
+        let stateBefore = state()
 
         return IO { [weak self] _ in
-            guard let self = self,
-                  let stateAfter = self.getState?() else { return }
+            guard let self = self else { return }
 
+            let stateAfter = state()
+            
             self.queue.async {
                 let actionMessage = self.actionTransform.transform(action: action, source: dispatcher)
                 self.actionPrinter.log(action: actionMessage)
